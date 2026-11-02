@@ -35,6 +35,8 @@ Around the paths: `60_engines.sh` (table engines in action), `70_benchmark.sh` (
 ## Quick start
 
 ```bash
+git clone https://github.com/dkrautschick/pg_clickhouse_integration && cd pg_clickhouse_integration
+chmod +x scripts/*.sh                                  # GitHub's web upload drops the executable bits
 cp .env.example .env                                   # defaults match the Docker stack
 docker compose --env-file .env -f docker/compose.yml up -d --wait   # PostgreSQL 18 (wal_level=logical) + ClickHouse
 # ClickHouse inside the stack reaches PostgreSQL as postgres:5432:
