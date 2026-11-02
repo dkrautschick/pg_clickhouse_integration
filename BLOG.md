@@ -2,7 +2,7 @@
 
 ### Why your PostgreSQL database needs a ClickHouse sidekick, and six ways to feed it, from a CSV file to logical decoding, without a single pay-per-query invoice
 
-*All scripts in this post live in the companion repository [dkrautschick/pg-clickhouse-sidekick](https://github.com/dkrautschick/pg-clickhouse-sidekick).
+*All scripts in this post live in the companion repository [dkrautschick/pg_clickhouse_integration](https://github.com/dkrautschick/pg_clickhouse_integration).
 Every section references a numbered script you can run against a Docker stack on your laptop or against your own servers, and the `listings/`
 folder has each step as a standalone snippet. The demo table is `beer_sales`, because the only honest way to compare two databases is to make
 both of them count beer.*
