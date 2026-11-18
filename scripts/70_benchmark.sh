@@ -44,11 +44,12 @@ time_pg() { # best of BENCH_ROUNDS after one warm-up, from psql's own \timing (r
 }
 time_ch() { # same for clickhouse-client --time (seconds, converted to ms)
   local q="" i; for i in $(seq 0 "$BENCH_ROUNDS"); do q="$q$1 FORMAT Null;"$'\n'; done
-  chc --database "${CH_DB}_bench" --multiquery --time --query "$q" 2>&1 >/dev/null |
+  _QUIET=1 chc --database "${CH_DB}_bench" --multiquery --time --query "$q" 2>&1 >/dev/null |
     grep -E '^[0-9]+(\.[0-9]+)?$' | tail -n "$BENCH_ROUNDS" | sort -n | head -n1 | awk '{printf "%.3f", $1 * 1000}'
 }
 fmt() { awk -v v="$1" 'BEGIN { if (v < 10) printf "%.2f ms", v; else if (v < 1000) printf "%.1f ms", v; else printf "%.0f ms", v }'; }
 
+demo_show "The race: these SQL texts go to PostgreSQL and to ClickHouse, unchanged" "$(printf '%s;\n' "${SQLS[@]}")"
 log "Benchmark: the race (best of $BENCH_ROUNDS, one warm-up run)"
 mkdir -p "$REPO/results"; OUT="$REPO/results/benchmark.csv"; echo "query,postgresql_ms,clickhouse_ms" > "$OUT"
 printf '\n  %-3s %-20s %14s %14s   %s\n  %s\n' "#" "query" "PostgreSQL" "ClickHouse" "who wins" "---------------------------------------------------------------------------"

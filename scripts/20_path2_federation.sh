@@ -20,8 +20,9 @@ check "rows visible in ClickHouse right away" "$((before + 1))" "$(chv "SELECT c
 
 log "Every query is a round trip: the same aggregation, federated versus local copy"
 q='SELECT country, round(sum(liters)) AS liters FROM %s GROUP BY country ORDER BY liters DESC LIMIT 3 FORMAT Null'
-ms() { local s e; s=$(date +%s%N); chc --query "$1" >/dev/null; e=$(date +%s%N); echo $(( (e - s) / 1000000 )); }
+ms() { local s e; s=$(date +%s%N); _QUIET=1 chc --query "$1" >/dev/null; e=$(date +%s%N); echo $(( (e - s) / 1000000 )); }
 # shellcheck disable=SC2059  # $q is a printf template on purpose
+demo_show "ClickHouse (timed, twice each)" "$(printf "$q;" "${CH_DB}.p2_pg_beer_sales")"$'\n'"$(printf "$q;" "${CH_DB}.p1_csv")"
 for run in 1 2; do
   fed=$(ms "$(printf "$q" "${CH_DB}.p2_pg_beer_sales")"); loc=$(ms "$(printf "$q" "${CH_DB}.p1_csv")")
   echo "run $run: PostgreSQL engine ${fed} ms | local MergeTree ${loc} ms (includes client start-up)"
