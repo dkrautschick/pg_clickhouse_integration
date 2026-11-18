@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Remove what the scripts created. Safe by default: only ClickHouse objects. Opt in to more:
 #   DROP_PG=yes       drop the PostgreSQL databases (demo + benchmark) after removing the Debezium connector and its slot
-#   STOP_STACK=yes    docker compose down -v (both compose files)
+#   STOP_STACK=yes    stop what scripts/setup.sh started: docker compose down -v, our own local instances (.local/); PURGE=yes also deletes .local/
+#                     (a PostgreSQL / ClickHouse that was already running and only reused is never stopped)
 #   TERMINATE=yes     terminate the Aiven services of path 5 (they cost money while they run)
 # Double-checks: no replication slot left behind on the PostgreSQL side (an inactive slot keeps WAL forever).
 source "$(dirname "${BASH_SOURCE[0]}")/00_lib.sh"
@@ -19,8 +20,7 @@ if [[ "${DROP_PG:-no}" == "yes" ]]; then
   check "orphaned replication slots" 0 "$left"
 fi
 if [[ "${STOP_STACK:-no}" == "yes" ]]; then
-  need docker
-  docker compose --env-file "$ENV_FILE" -f "$REPO/docker/compose.yml" -f "$REPO/docker/compose.kafka.yml" down -v
+  "$HERE/setup.sh" down
 fi
 if [[ "${TERMINATE:-no}" == "yes" ]]; then
   need avn; : "${AVN_PROJECT:?}"

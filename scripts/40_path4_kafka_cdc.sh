@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Path 4: Debezium reads the WAL, Kafka carries the events, the ClickHouse Kafka engine consumes them.
-# Needs Docker: START_STACK=yes brings up docker/compose.yml + docker/compose.kafka.yml for you.
-# Run 01_seed.sh first (the connector snapshots the existing rows), with PG_ADDR_FROM_CH=postgres:5432 and
-# CH_*/PG_* pointing at the compose containers (see README).
+# Needs Docker for Kafka + Debezium Connect (they run as containers in every mode). PostgreSQL and ClickHouse can be
+# containers or local, scripts/setup.sh has set CDC_PG_HOST / PG_ADDR_FROM_CH accordingly (README: "Mixed setups").
+# START_STACK=yes adds Kafka + Connect (docker/compose.kafka.yml) to whatever runs.
+# Run 01_seed.sh first (the connector snapshots the existing rows).
 # Double-checks: connector task RUNNING, snapshot rows arrive, INSERT / UPDATE / DELETE in PostgreSQL show up in ClickHouse
 # (current view uses FINAL), and the replication slot is active.
 source "$(dirname "${BASH_SOURCE[0]}")/00_lib.sh"
@@ -10,13 +11,13 @@ need curl; need jq
 
 if [[ "${START_STACK:-no}" == "yes" ]]; then
   need docker
-  log "Path 4: starting PostgreSQL, ClickHouse, Kafka and Debezium Connect"
-  docker compose --env-file "$ENV_FILE" -f "$REPO/docker/compose.yml" -f "$REPO/docker/compose.kafka.yml" up -d --wait
+  log "Path 4: starting Kafka and Debezium Connect"
+  docker compose --env-file "$ENV_FILE" -f "$REPO/docker/compose.kafka.yml" up -d --wait
 fi
 
 log "Path 4: wait for Kafka Connect, register the Debezium connector"
 wait_until 120 "Kafka Connect REST API answers" curl -sf "$CONNECT_URL/connectors"
-jq --arg host "${CDC_PG_HOST:-postgres}" --arg port "${CDC_PG_PORT:-5432}" --arg user "$PG_USER" --arg pw "$PG_PASSWORD" --arg db "$PG_DB" \
+jq --arg host "$CDC_PG_HOST" --arg port "$CDC_PG_PORT" --arg user "$PG_USER" --arg pw "$PG_PASSWORD" --arg db "$PG_DB" \
    '.config["database.hostname"]=$host | .config["database.port"]=$port | .config["database.user"]=$user
     | .config["database.password"]=$pw | .config["database.dbname"]=$db' "$REPO/docker/debezium/pg-connector.json" \
   | curl -sf -X PUT -H 'Content-Type: application/json' --data @- "$CONNECT_URL/connectors/beerdb-connector/config" >/dev/null

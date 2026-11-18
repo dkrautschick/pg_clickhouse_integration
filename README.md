@@ -24,23 +24,63 @@ The demo table is `beer_sales` (who sold how many liters of which beer where), b
 Around the paths: `60_engines.sh` (table engines in action), `70_benchmark.sh` (PostgreSQL vs. ClickHouse, same SQL), `80_basics.sh`
 (parts, merges, granules, compression), `85_architecture_tour.sh` (processes vs. thread pools, see [`docs/architecture.md`](docs/architecture.md)).
 
+## Docker or local? Decide once
+
+The scripts run against *a* PostgreSQL and *a* ClickHouse. Where those two live is one decision, and `scripts/setup.sh` takes it for you:
+
+| | `MODE=docker` | `MODE=local` ("from scratch") |
+|---|---|---|
+| What runs | PostgreSQL 18 and ClickHouse as containers (`docker/compose.yml`) | PostgreSQL and ClickHouse natively on your machine |
+| You need | Docker (daemon running), `psql` | PostgreSQL server binaries (`initdb`, `pg_ctl`), a ClickHouse binary or package, `psql` |
+| Own instances | containers `pgch-postgres`, `pgch-clickhouse`, volumes | `.local/pg`, `.local/clickhouse` (data, logs, pid files; nothing outside the repo folder) |
+| Missing ClickHouse | n/a (client runs inside the container if there is none on the host) | offers to download the single binary into `.local/bin` |
+| `PG_ADDR_FROM_CH` | `postgres:5432` (container network) | `127.0.0.1:<PG_PORT>` |
+| Clean up | `STOP_STACK=yes scripts/99_cleanup.sh` (compose down -v) | same command stops our instances, `PURGE=yes` deletes `.local/` |
+
+```bash
+scripts/setup.sh check      # only look: tools, ports, what already runs. Changes nothing.
+scripts/setup.sh            # asks "docker or local?", detects, starts, verifies, writes .env
+MODE=docker scripts/setup.sh    # or MODE=local, no questions asked
+scripts/setup.sh status | down
+```
+
+**It does not trample what you already run.** Before anything is started, `setup.sh` checks ports 5432, 9000 and 8123 and probes what answers there
+(a PostgreSQL you installed years ago, a ClickHouse from another project, a container that is not ours, something that is neither). Then:
+
+- **Our own containers or `.local/` instances from an earlier run:** reused, so `setup.sh` is safe to run twice.
+- **A foreign PostgreSQL / ClickHouse that works with the credentials in `.env`:** you are asked `reuse | own | abort`.
+  *reuse* uses it (the demo only creates the databases `beerdb`/`beerbench`, the role `ch_reader`, and ClickHouse databases `beer*`; `99_cleanup.sh` removes them),
+  *own* leaves it alone and starts ours on the next free ports (5433, 9001/8124, ...), *abort* stops. Without a terminal the default is `own` in docker mode
+  and `reuse` in local mode. Force it with `ON_CONFLICT=reuse|own|abort`.
+- **A server that answers but rejects the login:** `reuse` is refused with a hint (`PG_USER` / `PG_PASSWORD` / `CH_USER` / `CH_PASSWORD` in `.env`).
+- **A port taken by something that is not a database:** both services simply move to a free port.
+
+Afterwards `setup.sh` verifies the three things that usually go wrong: PostgreSQL login, ClickHouse login, and that **ClickHouse can reach PostgreSQL under
+the address it was given** (`PG_ADDR_FROM_CH`). Everything it decided lands in `.env`, and every other script runs a one-line preflight, so a missing
+server gives "run scripts/setup.sh" instead of a psql stack of errors.
+
+### Mixed setups
+
+`PG_MODE` and `CH_MODE` override one side: `MODE=docker PG_MODE=local scripts/setup.sh` puts only ClickHouse in a container. Then ClickHouse reaches the host
+as `host.docker.internal:<PG_PORT>`; our own local PostgreSQL gets `listen_addresses='*'` plus `pg_hba` rules for the private ranges for that (a PostgreSQL you
+reuse has to allow that itself). Kafka and Debezium (path 4) always run in Docker, because that is how they are packaged here; the script picks the
+right broker address (`kafka:19092` from a ClickHouse container, `127.0.0.1:9092` from a local one) and the right PostgreSQL address for Debezium.
+
 ## Prerequisites
 
-- `psql` (any recent PostgreSQL client package), `jq`, `envsubst` (package `gettext-base` on Debian/Ubuntu, `gettext` elsewhere)
-- A ClickHouse client. The single binary does everything: `curl https://clickhouse.com/ | sh` gives you `./clickhouse`; set `CH_CLIENT="./clickhouse client"` in `.env`
-  (the packages install `clickhouse-client`, then `CH_CLIENT=clickhouse-client`).
-- A PostgreSQL and a ClickHouse to talk to. The quickest pair is the Docker stack below; your own servers work too.
-- Path 4 needs Docker. Path 5 needs an Aiven account and the [Aiven CLI](https://aiven.io/docs/tools/cli) (`pip install aiven-client`, `avn user login`).
+- `psql` (any recent PostgreSQL client package), `jq`, `curl`, `envsubst` (package `gettext-base` on Debian/Ubuntu, `gettext` elsewhere)
+- Docker mode: Docker with the compose plugin. Local mode: PostgreSQL server binaries (`apt install postgresql`, `dnf install postgresql-server`, Homebrew `postgresql@18`;
+  set `PG_BIN=/path/to/bin` if they are not in the usual places) and ClickHouse (the single binary from `curl https://clickhouse.com/ | sh`, or the packages;
+  `setup.sh` finds either and sets `CH_CLIENT` for you).
+- Your own servers work too: skip `setup.sh`, fill `.env` by hand (see `.env.example`) and run the scripts.
+- Path 4 needs Docker (Kafka and Debezium). Path 5 needs an Aiven account and the [Aiven CLI](https://aiven.io/docs/tools/cli) (`pip install aiven-client`, `avn user login`).
 
 ## Quick start
 
 ```bash
 git clone https://github.com/dkrautschick/pg_clickhouse_integration && cd pg_clickhouse_integration
-chmod +x scripts/*.sh                                  # GitHub's web upload drops the executable bits
-cp .env.example .env                                   # defaults match the Docker stack
-docker compose --env-file .env -f docker/compose.yml up -d --wait   # PostgreSQL 18 (wal_level=logical) + ClickHouse
-# ClickHouse inside the stack reaches PostgreSQL as postgres:5432:
-echo 'PG_ADDR_FROM_CH=postgres:5432' >> .env
+chmod +x scripts/*.sh                # GitHub's web upload drops the executable bits
+scripts/setup.sh                     # docker or local, detects running servers, writes .env (see above)
 
 scripts/01_seed.sh                   # database, table, read-only role, 200,000 rows
 scripts/10_path1_csv.sh              # path 1: COPY out, INSERT in, watch it go stale
@@ -53,15 +93,15 @@ scripts/85_architecture_tour.sh      # processes and settings vs. thread pools a
 scripts/70_benchmark.sh              # the race: 7 queries, milliseconds, both systems (BENCH_ROWS, default 2,000,000)
 
 scripts/run_all.sh                   # everything above except the benchmark; RUN_BENCH=yes adds it
-scripts/99_cleanup.sh                # ClickHouse objects; DROP_PG=yes also the databases; STOP_STACK=yes docker compose down -v
+scripts/99_cleanup.sh                # ClickHouse objects; DROP_PG=yes also the databases; STOP_STACK=yes stops what setup.sh started
 ```
 
 ### Path 4: Kafka and Debezium
 
 ```bash
-docker compose --env-file .env -f docker/compose.yml -f docker/compose.kafka.yml up -d --wait
+scripts/setup.sh                     # PostgreSQL + ClickHouse, docker or local
 scripts/01_seed.sh                   # if not done yet
-scripts/40_path4_kafka_cdc.sh        # registers the connector, waits for the snapshot, then INSERT / UPDATE / DELETE round trips
+START_STACK=yes scripts/40_path4_kafka_cdc.sh   # starts Kafka + Debezium Connect first, then: registers the connector, waits for the snapshot, then INSERT / UPDATE / DELETE round trips
 ```
 
 One single-node Kafka (KRaft, no ZooKeeper, `apache/kafka`), Debezium Connect (`quay.io/debezium/connect`), the connector JSON is in
@@ -96,6 +136,7 @@ try one step in your own `psql` or `clickhouse-client`, or to understand what a 
 
 | Script | Checks |
 |---|---|
+| `setup.sh` | PostgreSQL login, ClickHouse login, ClickHouse can reach PostgreSQL as `PG_ADDR_FROM_CH`, `wal_level` |
 | `01_seed.sh` | `wal_level`, read-only role, row count equals the seed, ClickHouse reachable |
 | `10_path1_csv.sh` | row count PostgreSQL = ClickHouse after the load; exactly the rows added afterwards are missing |
 | `20_path2_federation.sh` | a row inserted in PostgreSQL is visible through the PostgreSQL engine immediately; federated vs. local timing |
@@ -113,9 +154,12 @@ try one step in your own `psql` or `clickhouse-client`, or to understand what a 
 
 Run from scratch against PostgreSQL 16 and ClickHouse 26.10 on one small machine: `run_all.sh` (paths 1, 2, 3, the path 4 transform
 test, engines, basics, architecture tour) and the benchmark with 300,000 and 2,000,000 rows, all checks green, `shellcheck` clean.
-Not run end to end: path 2b (no `pg_clickhouse` build at hand; syntax follows the official tutorial), path 4 with the real Kafka and Debezium
-containers (compose files validated, the ClickHouse half tested with synthetic Debezium events), and path 5 (needs an Aiven account; the
-`avn` calls and Terraform are the ones used for the talk's demo). Issues welcome.
+`setup.sh` local mode was tested with PostgreSQL 16 and ClickHouse 26.11 (own instances, a foreign PostgreSQL already on 5432: detected, reused with
+its password or bypassed with an own instance on 5433, a foreign ClickHouse on 8123/9000 likewise, `run_all.sh` green against the result).
+**Not run:** `setup.sh` in Docker mode and the mixed modes (compose files validated with `docker compose config`, but no Docker daemon was
+available for the test), path 2b (no `pg_clickhouse` build at hand; syntax follows the official tutorial), path 4 with the real Kafka and Debezium
+containers (the ClickHouse half tested with synthetic Debezium events), and path 5 (needs an Aiven account; the `avn` calls and Terraform are the
+ones used for the talk's demo). Issues welcome.
 
 ## The benchmark, as a teaser
 
@@ -137,13 +181,14 @@ Disk: 166 MB table + 103 MB indexes in PostgreSQL, 50 MiB in ClickHouse.
 ## Layout
 
 ```
-scripts/     numbered bash scripts, all source scripts/00_lib.sh; run_all.sh for the tour, 99_cleanup.sh to undo
+scripts/     numbered bash scripts, all source scripts/00_lib.sh; setup.sh decides docker vs. local; run_all.sh for the tour, 99_cleanup.sh to undo
 sql/         templates with ${VAR} placeholders, filled from .env by the scripts (envsubst)
 listings/    every step standalone with <VAR> placeholders (SQL generated from sql/, shell by hand)
 docker/      compose.yml (PostgreSQL + ClickHouse), compose.kafka.yml (adds Kafka + Debezium Connect), debezium/pg-connector.json
 terraform/   path 5 as code: aiven_pg, aiven_clickhouse, aiven_service_integration (+ optional Kafka)
 docs/        architecture.md (processes vs. threads), path6_peerdb.md, path7_walshadow.md
 BLOG.md      the blog post; BLOG_TLDR.md its five bullets
+.local/      own native instances started by setup.sh (git-ignored)
 ```
 
 ## Notes and gotchas

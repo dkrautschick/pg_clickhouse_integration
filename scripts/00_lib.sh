@@ -13,10 +13,11 @@ ENV_FILE="${ENV_FILE:-$REPO/.env}"
 : "${CH_HOST:=127.0.0.1}" "${CH_PORT:=9000}" "${CH_HTTP_PORT:=8123}" "${CH_USER:=default}" "${CH_PASSWORD:=}"
 : "${CH_SECURE:=false}" "${CH_DB:=beer}" "${CH_CLIENT:=clickhouse client}"
 : "${ROWS:=200000}" "${BENCH_ROWS:=2000000}" "${BENCH_ROUNDS:=3}"
+: "${CDC_PG_HOST:=postgres}" "${CDC_PG_PORT:=5432}"
 : "${KAFKA_BROKER_FROM_CH:=kafka:19092}" "${CONNECT_URL:=http://127.0.0.1:8083}" "${P4_PREFIX:=p4}"
 export PG_HOST PG_PORT PG_USER PG_PASSWORD PG_DB PG_ADDR_FROM_CH PG_RO_USER PG_RO_PASSWORD
 export CH_HOST CH_PORT CH_HTTP_PORT CH_USER CH_PASSWORD CH_SECURE CH_DB ROWS BENCH_ROWS BENCH_ROUNDS
-export KAFKA_BROKER_FROM_CH CONNECT_URL P4_PREFIX
+export KAFKA_BROKER_FROM_CH CONNECT_URL P4_PREFIX CDC_PG_HOST CDC_PG_PORT
 export AIVEN_SRC="${AIVEN_SRC:-}"
 
 log()  { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
@@ -36,9 +37,11 @@ pgv()      { pgc -tA -c "$1"; }                       # one value to stdout
 # --- ClickHouse ------------------------------------------------------------------------------
 # Intentionally word-split: CH_CLIENT may be "clickhouse client" (one binary) or "clickhouse-client".
 chc() {
-  local secure=(); [[ "$CH_SECURE" == "true" ]] && secure=(--secure)
+  local secure=() host="$CH_HOST" port="$CH_PORT"; [[ "$CH_SECURE" == "true" ]] && secure=(--secure)
+  # setup.sh falls back to the client inside our container when the host has none: there the server is on 127.0.0.1:9000
+  [[ "$CH_CLIENT" == "docker exec"* ]] && { host=127.0.0.1; port=9000; }
   # shellcheck disable=SC2086
-  $CH_CLIENT --host "$CH_HOST" --port "$CH_PORT" --user "$CH_USER" \
+  $CH_CLIENT --host "$host" --port "$port" --user "$CH_USER" \
     ${CH_PASSWORD:+--password "$CH_PASSWORD"} "${secure[@]}" "$@" \
     2> >(grep -v -E 'Unknown settings?: .*skipping' >&2)
 }
@@ -67,3 +70,20 @@ wait_for() {
   for ((i = 0; i < t; i++)); do if eval "$expr" >/dev/null 2>&1; then ok "$what"; return 0; fi; sleep 1; done
   die "timeout after ${t}s: $what"
 }
+
+# --- Preflight: are the servers there? ---------------------------------------------------------------------
+# Every script sources this file, so a missing server is reported once, in one place, with the way out.
+# Skipped by setup.sh itself and by scripts that do not need the local pair (NEED_SERVERS=no before sourcing).
+preflight() {
+  local bad=0
+  if ! PGCONNECT_TIMEOUT=3 pg_admin -tA -c 'SELECT 1' >/dev/null 2>&1; then
+    warn "PostgreSQL is not reachable on $PG_HOST:$PG_PORT as $PG_USER (or the credentials in .env are wrong)."; bad=1
+  fi
+  if ! chc --query 'SELECT 1' >/dev/null 2>&1; then
+    warn "ClickHouse is not reachable on $CH_HOST:$CH_PORT as $CH_USER with '$CH_CLIENT' (or the credentials in .env are wrong)."; bad=1
+  fi
+  if [[ $bad -ne 0 ]]; then
+    die "Run scripts/setup.sh first: it asks docker or local, detects servers that already run (e.g. a local PostgreSQL on 5432), picks free ports and writes .env. 'scripts/setup.sh check' only looks."
+  fi
+}
+if [[ -z "${SETUP_RUNNING:-}" && "${NEED_SERVERS:-yes}" == yes ]]; then preflight; fi

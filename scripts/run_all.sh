@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The quick tour: everything that runs against a plain PostgreSQL + ClickHouse pair (no Docker, no cloud account).
+# The quick tour: everything that runs against a plain PostgreSQL + ClickHouse pair (containers or local, see scripts/setup.sh).
 #   scripts/run_all.sh            paths 1, 2, 3, the path 4 transform test, engines, basics, the PeerDB pattern
 #   RUN_BENCH=yes scripts/run_all.sh   adds the benchmark (BENCH_ROWS rows)
 # Not included because they need more than two servers: 25 (pg_clickhouse extension), 40 (Kafka + Debezium), 50 (Aiven).

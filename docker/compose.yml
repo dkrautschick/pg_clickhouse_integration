@@ -1,9 +1,13 @@
 # The two systems of the talk: PostgreSQL (source of truth) and ClickHouse (the sidekick).
-#   docker compose --env-file .env -f docker/compose.yml up -d
-# Inside this compose network ClickHouse reaches PostgreSQL as postgres:5432 -> set PG_ADDR_FROM_CH=postgres:5432.
+# Normally started through scripts/setup.sh (MODE=docker), which also picks free host ports if 5432 / 9000 / 8123 are taken
+# and writes PG_ADDR_FROM_CH. By hand:
+#   docker compose --env-file .env -f docker/compose.yml up -d --wait
+# Inside this compose network ClickHouse reaches PostgreSQL as postgres:5432 (container port, whatever PG_PORT on the host is).
+# host.docker.internal points at the host, for the mixed setup "ClickHouse in Docker, PostgreSQL local".
 name: pg-clickhouse-sidekick
 services:
   postgres:
+    container_name: pgch-postgres
     image: ${PG_IMAGE:-postgres:18}
     command: ["postgres", "-c", "wal_level=logical", "-c", "max_wal_senders=10", "-c", "max_replication_slots=10"]
     environment:
@@ -19,6 +23,9 @@ services:
       retries: 20
 
   clickhouse:
+    container_name: pgch-clickhouse
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     image: ${CH_IMAGE:-clickhouse/clickhouse-server:latest}
     environment:
       CLICKHOUSE_USER: ${CH_USER:-default}

@@ -5,6 +5,7 @@
 # Prerequisites: Aiven CLI logged in (`avn user login`), AVN_PROJECT in .env, jq, psql, a ClickHouse client binary.
 # Double-checks: services RUNNING, seeded rows in Aiven PostgreSQL, integration exists, ClickHouse sees the same
 # row count through the integration database and through the refreshable local copy.
+NEED_SERVERS=no   # Aiven provides both servers; no local pair needed
 source "$(dirname "${BASH_SOURCE[0]}")/00_lib.sh"
 need avn; need jq
 : "${AVN_PROJECT:?Set AVN_PROJECT in .env}"
