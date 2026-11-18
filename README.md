@@ -96,6 +96,21 @@ scripts/run_all.sh                   # everything above except the benchmark; RU
 scripts/99_cleanup.sh                # ClickHouse objects; DROP_PG=yes also the databases; STOP_STACK=yes stops what setup.sh started
 ```
 
+### Demo mode: show the statement, pause, then run it
+
+`run_all.sh` prints results and checks, which is what you want in CI and not what you want on a projector. For talks and workshops:
+
+```bash
+scripts/run_all.sh --demo              # every statement is printed BEFORE it runs, and waits for a key
+DEMO=yes scripts/30_path3_refreshable_mv.sh   # the same for a single script
+DEMO=full scripts/run_all.sh --demo    # ... and also the one-value queries behind the checks
+```
+
+At each prompt: **Enter** runs the statement, **c** stops pausing for the rest of the run (statements are still printed), **q** quits. `run_all.sh --demo` also
+waits before each script. Without a terminal (CI, a pipe) nothing waits, the statements are only printed. The statements are the real ones, taken from the
+`sql/` templates after placeholder substitution, so what you show is what runs; the timed queries of the benchmark are shown once before the race and are not paused
+individually, so the pauses cannot distort the milliseconds.
+
 ### Path 4: Kafka and Debezium
 
 ```bash
