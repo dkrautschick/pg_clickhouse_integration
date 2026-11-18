@@ -3,7 +3,7 @@
 ### Why your PostgreSQL database needs a ClickHouse sidekick, and six ways to feed it, from a CSV file to logical decoding, without a single pay-per-query invoice
 
 *All scripts in this post live in the companion repository [dkrautschick/pg_clickhouse_integration](https://github.com/dkrautschick/pg_clickhouse_integration).
-Every section references a numbered script you can run against a Docker stack on your laptop or against your own servers, and the `listings/`
+Every section references a numbered script you can run against a Docker stack on your laptop, against a natively installed PostgreSQL and ClickHouse, or against your own servers (`scripts/setup.sh` asks which, and notices what already runs on your ports), and the `listings/`
 folder has each step as a standalone snippet. The demo table is `beer_sales`, because the only honest way to compare two databases is to make
 both of them count beer.*
 
@@ -489,4 +489,4 @@ left preview. Refreshable materialized views if "five minutes old" is fine, whic
 - Six ways to feed the sidekick, from a CSV to logical decoding; freshness goes up, so does the number of things you run.
 - "Materialized view" means a snapshot in PostgreSQL and a trigger in ClickHouse. Refreshable materialized views are the snapshot kind and need no scheduler.
 - CDC targets are `ReplacingMergeTree` tables: updates are versions, deletes are flags, `FINAL` is the price of eventual deduplication, and the replication slot must stay consumed.
-- Everything in this post is open source and runs on your laptop: clone the repository, `docker compose up`, `scripts/run_all.sh`. The beer is not included.
+- Everything in this post is open source and runs on your laptop: clone the repository, `scripts/setup.sh` (Docker or local, your choice), `scripts/run_all.sh`. The beer is not included.
