@@ -14,7 +14,7 @@ The demo table is `beer_sales` (who sold how many liters of which beer where), b
 |---|---|---|---|
 | 1 | **The caveman way:** `\copy` out, `INSERT ... FORMAT CSVWithNames` in | stale the moment you press Enter | `10_path1_csv.sh` |
 | 2 | **Query federation:** `postgresql()` table function, `ENGINE = PostgreSQL` table, PostgreSQL database engine | live, one round trip per query | `20_path2_federation.sh` |
-| 2b | **Reverse federation:** `pg_clickhouse`, PostgreSQL queries ClickHouse through an FDW with pushdown | live | `25_path2b_pg_clickhouse.sh` |
+| 2b | **Reverse federation:** `pg_clickhouse`, PostgreSQL queries ClickHouse through an FDW with pushdown ([the simplest example](#path-2b-pg_clickhouse-the-shortest-path-to-postgres-queries-clickhouse)) | live | `25_path2b_pg_clickhouse.sh` |
 | 3 | **Refreshable materialized view:** ClickHouse pulls a local copy on its own schedule | refresh interval | `30_path3_refreshable_mv.sh` |
 | 4 | **Kafka CDC:** Debezium reads the WAL, Kafka carries events, the Kafka engine + a materialized view land them in `ReplacingMergeTree` | seconds | `40_path4_kafka_cdc.sh` (`41_test_cdc_transform.sh` without Kafka) |
 | 5 | **The lazy way:** Aiven for PostgreSQL + Aiven for ClickHouse + one `clickhouse_postgresql` integration | live, plus an optional refreshable copy | `50_path5_aiven.sh` |
@@ -134,11 +134,30 @@ TERMINATE=yes scripts/99_cleanup.sh  # the services cost money while they run
 `listings/50_aiven_cli.sh` has the `avn` commands one by one, `terraform/` the same as code (`var.with_kafka = true` adds Kafka and the
 `clickhouse_kafka` integration).
 
-### Path 2b: pg_clickhouse
+### Path 2b: pg_clickhouse (the shortest path to "Postgres queries ClickHouse")
+
+PostgreSQL asks, ClickHouse answers. Five statements in PostgreSQL, then it is plain SQL (`sql/25_pg_p2b_pg_clickhouse.sql`):
+
+```sql
+CREATE EXTENSION pg_clickhouse;
+CREATE SERVER beer_ch FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS (driver 'binary', host 'ch-host', dbname 'beer');
+CREATE USER MAPPING FOR CURRENT_USER SERVER beer_ch OPTIONS (user 'default');
+CREATE SCHEMA ch;
+IMPORT FOREIGN SCHEMA "beer" FROM SERVER beer_ch INTO ch;
+```
+
+And the simplest possible example (`sql/27_pg_p2b_simple.sql`): the same query, once answered by PostgreSQL, once by ClickHouse. Only the schema name differs:
+
+```sql
+SELECT country, sum(liters) FROM public.beer_sales GROUP BY country;   -- PostgreSQL
+SELECT country, sum(liters) FROM ch.p1_csv         GROUP BY country;   -- ClickHouse (one Foreign Scan)
+```
+
+The script checks that both return the same total and that the plan of the second one contains a `Foreign Scan`.
 
 Needs the extension in your PostgreSQL. Easiest: `docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=beer ghcr.io/clickhouse/pg_clickhouse:18`
 (the official PostgreSQL image plus the extension), point `PG_HOST/PG_PORT` at it, run `01_seed.sh` and `10_path1_csv.sh`, then
-`25_path2b_pg_clickhouse.sh`. Without the extension the script explains that and exits 0.
+`25_path2b_pg_clickhouse.sh`. Without the extension the script explains that and exits 0. Remember: this path moves *queries*, not data.
 
 ## Listings: every step as a copy-paste snippet
 
@@ -155,7 +174,7 @@ try one step in your own `psql` or `clickhouse-client`, or to understand what a 
 | `01_seed.sh` | `wal_level`, read-only role, row count equals the seed, ClickHouse reachable |
 | `10_path1_csv.sh` | row count PostgreSQL = ClickHouse after the load; exactly the rows added afterwards are missing |
 | `20_path2_federation.sh` | a row inserted in PostgreSQL is visible through the PostgreSQL engine immediately; federated vs. local timing |
-| `25_path2b_pg_clickhouse.sh` | extension available, foreign tables imported, the plan contains a `Foreign Scan` |
+| `25_path2b_pg_clickhouse.sh` | extension available, foreign tables imported, the same query gives the same total in PostgreSQL and ClickHouse, the plan contains a `Foreign Scan` |
 | `30_path3_refreshable_mv.sh` | row count and `sum(liters)` equal after the first and after the next refresh, `system.view_refreshes` healthy |
 | `40_path4_kafka_cdc.sh` | connector task `RUNNING`, slot active, snapshot arrives, INSERT / UPDATE / DELETE each show up in the current view |
 | `41_test_cdc_transform.sh` | all versions kept in the raw table, `FINAL` view shows the latest state, deletes gone, timestamps parsed to the microsecond |
@@ -172,7 +191,7 @@ test, engines, basics, architecture tour) and the benchmark with 300,000 and 2,0
 `setup.sh` local mode was tested with PostgreSQL 16 and ClickHouse 26.11 (own instances, a foreign PostgreSQL already on 5432: detected, reused with
 its password or bypassed with an own instance on 5433, a foreign ClickHouse on 8123/9000 likewise, `run_all.sh` green against the result).
 **Not run:** `setup.sh` in Docker mode and the mixed modes (compose files validated with `docker compose config`, but no Docker daemon was
-available for the test), path 2b (no `pg_clickhouse` build at hand; syntax follows the official tutorial), path 4 with the real Kafka and Debezium
+available for the test), path 2b including the simplest example (no `pg_clickhouse` build at hand; syntax follows the official tutorial), path 4 with the real Kafka and Debezium
 containers (the ClickHouse half tested with synthetic Debezium events), and path 5 (needs an Aiven account; the `avn` calls and Terraform are the
 ones used for the talk's demo). Issues welcome.
 
