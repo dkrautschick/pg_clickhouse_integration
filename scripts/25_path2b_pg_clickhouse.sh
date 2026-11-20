@@ -2,7 +2,7 @@
 # Path 2b: pg_clickhouse, the mirror image of path 2. PostgreSQL gets a foreign schema `ch` that points at ClickHouse.
 # It moves QUERIES, not data: the table it reads here is the copy path 1 (or 3) filled.
 # Skips cleanly (exit 0) when the extension is not installed in your PostgreSQL.
-# Double-checks: extension available, plan shows a Foreign Scan, aggregate result equals the one from PostgreSQL itself.
+# Double-checks: extension available, the same query in PostgreSQL and ClickHouse gives the same total, plan shows a Foreign Scan.
 source "$(dirname "${BASH_SOURCE[0]}")/00_lib.sh"
 
 have="$(pg_admin -tA -c "SELECT count(*) FROM pg_available_extensions WHERE name = 'pg_clickhouse'")"
@@ -23,6 +23,12 @@ log "Path 2b: foreign server, user mapping, IMPORT FOREIGN SCHEMA"
 render "$REPO/sql/25_pg_p2b_pg_clickhouse.sql" | pgc
 [[ "$(pgv "SELECT count(*) FROM information_schema.foreign_tables WHERE foreign_table_schema = 'ch'")" -ge 1 ]] \
   && ok "foreign tables imported: $(pgv "SELECT string_agg(foreign_table_name, ', ') FROM information_schema.foreign_tables WHERE foreign_table_schema = 'ch'")"
+
+log "Path 2b, the simplest example: the same query, once in PostgreSQL, once in ClickHouse"
+pgc -f "$REPO/sql/27_pg_p2b_simple.sql"
+# same total from both engines (compare with a small tolerance: the column types and float rounding differ between the two systems)
+same="$(pgv "SELECT abs((SELECT sum(liters) FROM public.beer_sales) - (SELECT sum(liters) FROM ch.p1_csv)) < 0.0001 * (SELECT sum(liters) FROM public.beer_sales)")"
+[[ "$same" == t ]] && ok "both engines return the same total" || warn "totals differ: did 10_path1_csv.sh copy the current data?"
 
 log "Path 2b: the plan and the answer"
 plan="$(pgc -tA -c "EXPLAIN (VERBOSE, COSTS OFF) SELECT country, sum(liters) FROM ch.p1_csv GROUP BY country")"
