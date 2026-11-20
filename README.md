@@ -17,7 +17,7 @@ The demo table is `beer_sales` (who sold how many liters of which beer where), b
 | 2b | **Reverse federation:** `pg_clickhouse`, PostgreSQL queries ClickHouse through an FDW with pushdown ([the simplest example](#path-2b-pg_clickhouse-the-shortest-path-to-postgres-queries-clickhouse)) | live | `25_path2b_pg_clickhouse.sh` |
 | 3 | **Refreshable materialized view:** ClickHouse pulls a local copy on its own schedule | refresh interval | `30_path3_refreshable_mv.sh` |
 | 4 | **Kafka CDC:** Debezium reads the WAL, Kafka carries events, the Kafka engine + a materialized view land them in `ReplacingMergeTree` | seconds | `40_path4_kafka_cdc.sh` (`41_test_cdc_transform.sh` without Kafka) |
-| 5 | **The lazy way:** Aiven for PostgreSQL + Aiven for ClickHouse + one `clickhouse_postgresql` integration | live, plus an optional refreshable copy | `50_path5_aiven.sh` |
+| 5 | **The lazy way:** Aiven for PostgreSQL + Aiven for ClickHouse + one `clickhouse_postgresql` integration; also native CDC straight from the WAL (limited availability, listing only: [`listings/50_aiven_cdc_api.sh`](listings/50_aiven_cdc_api.sh)) | live, plus an optional refreshable copy; about 10 s with CDC | `50_path5_aiven.sh` |
 | 6 | **Supplement:** PeerDB / ClickPipes Postgres CDC, the table shape it produces | tens of seconds (vendor) | `65_peerdb_pattern.sh`, [`docs/path6_peerdb.md`](docs/path6_peerdb.md) |
 | 7 | **Outlook:** WalShadow, physical WAL straight into ClickHouse | sub-second (vendor) | [`docs/path7_walshadow.md`](docs/path7_walshadow.md) |
 
@@ -134,6 +134,10 @@ TERMINATE=yes scripts/99_cleanup.sh  # the services cost money while they run
 `listings/50_aiven_cli.sh` has the `avn` commands one by one, `terraform/` the same as code (`var.with_kafka = true` adds Kafka and the
 `clickhouse_kafka` integration).
 
+Aiven also offers **native CDC from PostgreSQL to ClickHouse** (integration type `postgresql_clickhouse_cdc`, *limited availability*: your project needs CDC access):
+no Kafka, no Debezium, about 10 seconds behind, and the target tables are the `ReplacingMergeTree` shape of path 4 with a `__current` view. The API call is in
+[`listings/50_aiven_cdc_api.sh`](listings/50_aiven_cdc_api.sh); `50_path5_aiven.sh` does not run it.
+
 ### Path 2b: pg_clickhouse (the shortest path to "Postgres queries ClickHouse")
 
 PostgreSQL asks, ClickHouse answers. Five statements in PostgreSQL, then it is plain SQL (`sql/25_pg_p2b_pg_clickhouse.sql`):
@@ -163,7 +167,7 @@ Needs the extension in your PostgreSQL. Easiest: `docker run -d --network host -
 
 `listings/` holds the same steps taken apart, one file per statement block, with placeholders (`<CH_DB>`, `<PG_ADDR_FROM_CH>`, `<AVN_PROJECT>`, ...)
 instead of variables and no dependency on `00_lib.sh` or `.env`. The SQL files are generated from `sql/` by `scripts/build_listings.sh`, so a
-listing is exactly the statement the scripts run; the shell listings (`10_csv_*.sh`, `40_*.sh`, `50_aiven_cli.sh`) are written by hand. Use them to
+listing is exactly the statement the scripts run; the shell listings (`10_csv_*.sh`, `40_*.sh`, `50_aiven_cli.sh`, `50_aiven_cdc_api.sh`) are written by hand. Use them to
 try one step in your own `psql` or `clickhouse-client`, or to understand what a script does before you trust it.
 
 ## What each script double-checks
@@ -192,8 +196,8 @@ test, engines, basics, architecture tour) and the benchmark with 300,000 and 2,0
 its password or bypassed with an own instance on 5433, a foreign ClickHouse on 8123/9000 likewise, `run_all.sh` green against the result).
 **Not run:** `setup.sh` in Docker mode and the mixed modes (compose files validated with `docker compose config`, but no Docker daemon was
 available for the test), path 2b including the simplest example (no `pg_clickhouse` build at hand; syntax follows the official tutorial), path 4 with the real Kafka and Debezium
-containers (the ClickHouse half tested with synthetic Debezium events), and path 5 (needs an Aiven account; the `avn` calls and Terraform are the
-ones used for the talk's demo). Issues welcome.
+containers (the ClickHouse half tested with synthetic Debezium events), path 5 (needs an Aiven account; the `avn` calls and Terraform are the
+ones used for the talk's demo), and the native CDC call in `listings/50_aiven_cdc_api.sh` (needs a project with CDC access; copied from the Aiven documentation). Issues welcome.
 
 ## The benchmark, as a teaser
 
