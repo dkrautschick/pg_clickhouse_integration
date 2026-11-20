@@ -199,7 +199,7 @@ menu.
 | 2b | Reverse federation: PostgreSQL queries ClickHouse (`pg_clickhouse`) | live | an extension |
 | 3 | Refreshable materialized view: ClickHouse keeps a copy in sync | refresh interval | ClickHouse schedules it |
 | 4 | Kafka CDC: Debezium reads the WAL, row by row | seconds | Kafka + Debezium |
-| 5 | The lazy way: Aiven's built-in integrations | live (+ copy) | the platform |
+| 5 | The lazy way: Aiven's built-in integrations, including native CDC (limited availability) | live (+ copy), or about 10 s with CDC | the platform |
 | 6 | Supplement: PeerDB / ClickPipes | tens of seconds | PeerDB or ClickHouse Cloud |
 
 Every path has a trade-off between freshness, effort and operational risk, and there is a comparison table at the end so you do not have to
@@ -406,6 +406,34 @@ resource "aiven_service_integration" "pg_to_ch" {
 
 `terraform/` in the repository has the full version, with Kafka and the `clickhouse_kafka` integration behind `var.with_kafka`.
 
+### Even lazier: native CDC straight from the WAL (limited availability)
+
+The integrations above come in two flavours: query federation (`clickhouse_postgresql`) and Kafka topics (`clickhouse_kafka`). Aiven has now added a
+third one that is exactly the thing path 4 builds by hand, minus the parts you had to run: **PostgreSQL to ClickHouse change data capture** (in the
+console: *Replicate to ClickHouse (CDC)*, integration type `postgresql_clickhouse_cdc`). It copies the selected tables once, then follows the
+PostgreSQL write-ahead log and replays inserts, updates and deletes. No Kafka, no Debezium, no Kafka-engine SQL; the documentation quotes changes
+showing up within about 10 seconds. It is in **limited availability**: your project needs CDC access, which you request through your account team,
+so check the status before you promise it to anybody.
+
+```bash
+curl --request POST --url "https://api.aiven.io/v1/project/$PROJECT/integration" \
+  --header "Authorization: Bearer $TOKEN" --header "Content-Type: application/json" --data '{
+    "integration_type": "postgresql_clickhouse_cdc",
+    "source_service": "beer-pg", "dest_service": "beer-clickhouse",
+    "user_config": { "pipelines": [ { "source_database": "defaultdb", "destination_database": "beer",
+        "tables": [ {"schema": "public", "table": "beer_sales"} ] } ] } }'
+```
+
+What arrives is path 4's target table, built for you: per source table a `ReplicatedReplacingMergeTree` ordered by the primary key with the columns
+`_etl_version` (position in the stream) and `_etl_deleted` (1 = deleted), plus a view with the suffix `__current` that returns one row per key and
+hides deleted rows. Names are `schema_table` with every underscore doubled, so `public.beer_sales` becomes `public_beer__sales` and you read
+`public_beer__sales__current`. `numeric` and `money` arrive as `String`; cast them before you add them up. The listing is
+`listings/50_aiven_cdc_api.sh`. The honest fine print from the documentation: only Aiven for PostgreSQL to Aiven for ClickHouse (an external
+PostgreSQL does not work), every table needs a primary key, 1 to 400 tables per integration, no column selection, no pausing, renaming a column or
+changing a type stops that table until you resynchronise it, and replication shares CPU and memory with the ClickHouse service. It also keeps a
+replication slot on your PostgreSQL, so the rule from path 4 stands: a stalled replication holds WAL, and the WAL metric is the one to alert on.
+This one is not run by the repository's scripts, because it needs a project with CDC access; the listing is the call as the documentation shows it.
+
 ## Path 6, the supplement: PeerDB
 
 Not one of the five paths of the talk, but the question that came up most afterwards. PeerDB is an open-source, Postgres-first CDC tool that
@@ -418,7 +446,7 @@ like a standby would; `docs/path7_walshadow.md` keeps the notes until there is s
 
 ## Path 7, the outlook: WalShadow
 
-Every path so far that wants row-level freshness (4, 5 with Kafka, 6) uses *logical decoding*: PostgreSQL decodes the WAL into row changes,
+Every path so far that wants row-level freshness (4, 5 with Kafka or native CDC, 6) uses *logical decoding*: PostgreSQL decodes the WAL into row changes,
 through an output plugin, behind a replication slot. WalShadow, announced by ClickHouse on 10 September 2026, skips that layer. It consumes the
 *physical* WAL, the same stream a hot standby replays, decodes the heap records itself (outside PostgreSQL, in parallel, in Rust), replays the
 catalog changes into a schema-only shadow Postgres so it always knows the current table layout, builds ClickHouse-native blocks and inserts them
@@ -439,7 +467,7 @@ repository has `docs/path7_walshadow.md` with the links; a script will follow wh
 | 2b `pg_clickhouse` | live | one extension | existing SQL must keep hitting PostgreSQL |
 | 3 refreshable MV | seconds to minutes | low, ClickHouse refreshes itself | dashboards that can be five minutes old (most can) |
 | 4 Kafka CDC | sub-second to seconds | high, Kafka + Debezium | events, row-level freshness, you already run Kafka |
-| 5 Aiven integrations | live, plus copy | low, the platform runs it | you would rather not run Kafka |
+| 5 Aiven integrations | live, plus copy; about 10 s with native CDC | low, the platform runs it | you would rather not run Kafka (CDC: limited availability) |
 | 6 PeerDB | tens of seconds | medium, or ClickHouse Cloud | CDC without Kafka, Postgres-first |
 
 Start with query federation, graduate to a refreshable copy when PostgreSQL feels the queries, graduate to CDC when the refresh interval hurts.
