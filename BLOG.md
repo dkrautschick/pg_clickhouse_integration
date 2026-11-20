@@ -262,6 +262,16 @@ IMPORT FOREIGN SCHEMA "beer" FROM SERVER beer_ch INTO ch;
 EXPLAIN (VERBOSE) SELECT country, sum(liters) FROM ch.p1_csv GROUP BY country;   -- one Foreign Scan
 ```
 
+That is the whole setup: five statements, once. From then on it is just SQL. The simplest possible example is the same query twice, and only
+the schema name differs (`sql/27_pg_p2b_simple.sql`):
+
+```sql
+SELECT country, sum(liters) FROM public.beer_sales GROUP BY country;   -- answered by PostgreSQL
+SELECT country, sum(liters) FROM ch.p1_csv         GROUP BY country;   -- answered by ClickHouse
+```
+
+Same result, but the second query never scans a PostgreSQL heap page: the plan is a single `Foreign Scan`, and ClickHouse does the aggregation.
+
 Existing dashboards and ORMs keep talking to PostgreSQL and do not notice that the heavy lifting moved. Important: this path moves *queries*, not
 data. The data still have to get into ClickHouse by one of the other paths. The script skips politely if the extension is not installed and tells
 you how to get it (there is an official container image: the PostgreSQL image plus the extension).
