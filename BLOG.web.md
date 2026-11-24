@@ -129,7 +129,9 @@ Why a DBA should care: "ClickHouse got slow after we added two hundred Kafka tab
 
 Rule of thumb, an opinion rather than documentation: start with `MergeTree`; use `ReplacingMergeTree` when CDC updates must replace old rows; `Summing` or `Aggregating` behind a materialized view for roll-ups; `Replicated*` and `Distributed` when you scale out; `Kafka`, `PostgreSQL` or `S3` to reach the outside world. Ignore the rest until you have a reason.
 
-## Same table, same SQL, both systems (`70_benchmark.sh`)
+## Same table, same SQL, both systems
+
+*Script: `70_benchmark.sh`*
 
 A sanity check before the integration paths. The script creates the same `beer_sales` table in both systems, generates two million rows in PostgreSQL and copies exactly those rows over. PostgreSQL gets a primary key and the index a sensible DBA would add (`(country, sold_at)`, the counterpart of ClickHouse's `ORDER BY`). The script checks that row counts and sums match, then sends the *same SQL text* to both. One warm-up, best of three, one CPU, default settings, warm caches: a first impression, not a lab.
 
@@ -159,7 +161,9 @@ Notes: ClickHouse answers `count(*)` from part metadata. In the `country = 'DE'`
 
 Every path trades freshness against effort and operational risk. A comparison table at the end saves you from memorising anything. First, the data: `scripts/01_seed.sh` creates `beerdb`, the table, a read-only role for ClickHouse and 200,000 random but repeatable beer sales. It also checks `wal_level`, because path 4 needs `logical`.
 
-## Path 1: the caveman way (`10_path1_csv.sh`)
+## Path 1: the caveman way
+
+*Script: `10_path1_csv.sh`*
 
 ```sql
 \copy (SELECT * FROM beer_sales ORDER BY id) TO 'beer_sales.csv' CSV HEADER
@@ -174,7 +178,9 @@ Dead simple, no infrastructure, and the script confirms that both sides hold 200
 
 `best_effort` is there because PostgreSQL writes `2026-10-31 12:00:00.123456+00` and ClickHouse's strict parser does not love the `+00`.
 
-## Path 2: query federation (`20_path2_federation.sh`)
+## Path 2: query federation
+
+*Script: `20_path2_federation.sh`*
 
 ClickHouse can read PostgreSQL at query time, three ways. The table function is for ad hoc queries:
 
@@ -195,7 +201,9 @@ The script inserts a row into PostgreSQL and reads it through the engine table a
 
 The gap grows with the table, because the aggregation happens in ClickHouse but every row of the filtered columns travels over the wire. Every query is a round trip to PostgreSQL. That is great for exploration, joins with small lookup tables and proofs of concept. At scale you are back to running analytics on your OLTP system, with an extra hop. Mitigations: point it at a read replica, use a read-only role, and keep the password out of the DDL on a real system (named collections exist for that).
 
-## Path 2b: the mirror image, `pg_clickhouse` (`25_path2b_pg_clickhouse.sh`)
+## Path 2b: the mirror image, pg_clickhouse
+
+*Script: `25_path2b_pg_clickhouse.sh`*
 
 PostgreSQL people think "foreign data wrapper". For years there was only a community `clickhouse_fdw`. In December 2025 ClickHouse released `pg_clickhouse` (Apache 2.0), an official extension built on that code. PostgreSQL asks, ClickHouse answers, and aggregates and semi-joins are pushed down.
 
@@ -232,7 +240,9 @@ The same words mean three different things:
 
 The trigger kind is the workhorse of path 4 (parse the Debezium JSON as it arrives) and of every roll-up. The refreshable kind is path 3. By default a refresh replaces the whole target atomically. `APPEND` adds rows instead; then filter on a watermark column so the same row does not arrive twice.
 
-## Path 3: ClickHouse keeps its own copy (`30_path3_refreshable_mv.sh`)
+## Path 3: ClickHouse keeps its own copy
+
+*Script: `30_path3_refreshable_mv.sh`*
 
 ```sql
 CREATE TABLE beer.p3_copy (...) ENGINE = MergeTree ORDER BY (country, sold_at);
@@ -257,7 +267,9 @@ Adding a replica is easy: create the replicated table on the new node and it cat
 
 **On Aiven:** PostgreSQL offers read replicas and standby nodes. Aiven for ClickHouse is a single node, one shard of three nodes, or several shards of three. Every MergeTree table is replicated across the nodes of a shard, and a `Distributed` table on top reads across shards. The repository's scripts use `ReplicatedMergeTree()` on Aiven and `MergeTree` locally, which is the only line that differs.
 
-## Path 4: real streaming with Kafka and Debezium (`40_path4_kafka_cdc.sh`)
+## Path 4: real streaming with Kafka and Debezium
+
+*Script: `40_path4_kafka_cdc.sh`*
 
 Debezium reads the PostgreSQL write-ahead log through logical decoding (`wal_level = logical`, a replication slot, the built-in `pgoutput` plugin) and publishes every row change as an event on a Kafka topic, one topic per table. ClickHouse consumes the topic with a table of the `Kafka` engine, and here the trigger-style materialized view is exactly the right tool.
 
@@ -290,7 +302,9 @@ The Docker stack adds a single-node Kafka (KRaft, no ZooKeeper) and Debezium Con
 
 > The cost: you run Kafka, Debezium and a replication slot. The slot is the one to watch. A slot nobody consumes makes PostgreSQL keep WAL until the disk is full. The cleanup script drops it and checks that none is left.
 
-## Path 5: let the platform do the wiring (`50_path5_aiven.sh`)
+## Path 5: let the platform do the wiring
+
+*Script: `50_path5_aiven.sh`*
 
 Transparency first: I work at Aiven, and everything before this section runs anywhere. On Aiven the plumbing is a product feature.
 
