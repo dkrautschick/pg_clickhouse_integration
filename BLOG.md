@@ -25,8 +25,8 @@ HashAggregate  (cost=8231409.12..8231409.44 rows=32)
 Execution Time: 214532.880 ms      <-- 3.5 minutes, and counting
 ```
 
-A row store reads whole rows to sum one column. That is what it does for a living, and it is the right thing to do for `UPDATE beer_sales SET
-liters = 0.5 WHERE id = 4711`. It is the wrong thing for `SELECT country, sum(liters) FROM beer_sales GROUP BY country` over two billion rows.
+A row store keeps all columns of a row together on disk. That is perfect for `UPDATE beer_sales SET
+liters = 0.5 WHERE id = 4711`: one row, one place, done. It is a poor fit for `SELECT country, sum(liters) FROM beer_sales GROUP BY country` over two billion rows, because the database has to read every row in full to use just two of its columns.
 
 The traditional answer is to move analytics into a closed-source, pay-per-query cloud warehouse and to stop refreshing the dashboard because
 every refresh costs money. The better answer keeps PostgreSQL for what it is great at and adds an open-source column store next to it: PostgreSQL
