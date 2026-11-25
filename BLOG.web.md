@@ -11,7 +11,7 @@
 - There are six ways to feed the sidekick, from a CSV file to logical decoding. The fresher the data, the more you have to run.
 - "Materialized view" means a snapshot in PostgreSQL and a trigger in ClickHouse. Refreshable materialized views are the snapshot kind and need no scheduler.
 - CDC targets are `ReplacingMergeTree` tables: updates are versions, deletes are flags, `FINAL` is the price of deduplication, and the replication slot must stay consumed.
-- Everything here runs on your laptop: clone the repository, run `scripts/setup.sh` (Docker or local, your choice), then `scripts/run_all.sh`. The beer is not included.
+- Everything except path 5 runs on your laptop: clone the repository, run `scripts/setup.sh` (Docker or local, your choice), then `scripts/run_all.sh`. The beer is not included.
 
 ## The analytical wall
 
@@ -401,7 +401,7 @@ The catch is the word *physical*: WalShadow needs access to the raw WAL, and mos
 | 1 CSV | hours or days; manual every time | one-off load, migration, "just let me look at it" |
 | 2 federation | live; low, but slow at scale | exploration, small tables, proofs of concept |
 | 2b `pg_clickhouse` | live; one extension | existing SQL must keep hitting PostgreSQL |
-| 3 refreshable MV | seconds to minutes; low | dashboards that can be five minutes old (most can) |
+| 3 refreshable MV | seconds to minutes; low | dashboards that can be five minutes old |
 | 4 Kafka CDC | sub-second to seconds; high (Kafka + Debezium) | events, row-level freshness, you already run Kafka |
 | 5 Aiven integrations | live plus copy, about 10 s with native CDC; low | you would rather not run Kafka (CDC: limited availability) |
 | 6 PeerDB | tens of seconds; medium, or ClickHouse Cloud | CDC without Kafka, Postgres-first |
@@ -432,8 +432,8 @@ The repository moves 200,000 rows, and the benchmark two million. The procedure 
 
 **Why not just more PostgreSQL?** Often the right answer, for a long time. BRIN, covering indexes, partitioning and parallel workers buy years. The sidekick is for the day the maintenance window stops growing with the data.
 
-**Debezium or PeerDB or WalShadow?** Debezium if you already run Kafka and want the events for more than ClickHouse. PeerDB if you want CDC into ClickHouse with fewer moving parts and can live with the AGPL or use ClickHouse Cloud. WalShadow when you can give it the physical WAL and it has left preview. Refreshable materialized views if "five minutes old" is fine, which it is for most dashboards nobody admits to.
+**Debezium or PeerDB or WalShadow?** Debezium if you already run Kafka and want the events for more than ClickHouse. PeerDB if you want CDC into ClickHouse with fewer moving parts and can live with the AGPL or use ClickHouse Cloud. WalShadow when you can give it the physical WAL and it has left preview. Refreshable materialized views if "five minutes old" is fine, which is true for more dashboards than anyone admits.
 
 ## Try it yourself
 
-Everything in this post is open source and runs on your laptop. Clone [the repository](https://github.com/dkrautschick/pg_clickhouse_integration), run `scripts/setup.sh` (Docker or local, your choice), then `scripts/run_all.sh --demo` to see every statement before it runs. The beer is not included.
+The scripts in this post are open source and run on your laptop; path 5 needs an Aiven account. Clone [the repository](https://github.com/dkrautschick/pg_clickhouse_integration), run `scripts/setup.sh` (Docker or local, your choice), then `scripts/run_all.sh --demo` to see every statement before it runs. The beer is not included.

@@ -465,7 +465,7 @@ repository has `docs/path7_walshadow.md` with the links; a script will follow wh
 | 1 CSV | hours or days | low, manual every time | one-off load, migration, "just let me look at it" |
 | 2 federation | live | low, slow at scale | exploration, small tables, proofs of concept |
 | 2b `pg_clickhouse` | live | one extension | existing SQL must keep hitting PostgreSQL |
-| 3 refreshable MV | seconds to minutes | low, ClickHouse refreshes itself | dashboards that can be five minutes old (most can) |
+| 3 refreshable MV | seconds to minutes | low, ClickHouse refreshes itself | dashboards that can be five minutes old |
 | 4 Kafka CDC | sub-second to seconds | high, Kafka + Debezium | events, row-level freshness, you already run Kafka |
 | 5 Aiven integrations | live, plus copy; about 10 s with native CDC | low, the platform runs it | you would rather not run Kafka (CDC: limited availability) |
 | 6 PeerDB | tens of seconds | medium, or ClickHouse Cloud | CDC without Kafka, Postgres-first |
@@ -518,7 +518,7 @@ sidekick is for the day the maintenance window stops growing with the data.
 
 **Debezium or PeerDB or WalShadow?** Debezium if you already run Kafka and want the events for more than ClickHouse. PeerDB if you want CDC into
 ClickHouse with fewer moving parts and can live with the AGPL or use ClickHouse Cloud. WalShadow when you can give it the physical WAL and it has
-left preview. Refreshable materialized views if "five minutes old" is fine, which it is for most dashboards nobody admits to.
+left preview. Refreshable materialized views if "five minutes old" is fine, which is true for more dashboards than anyone admits.
 
 ## The two-minute version for your next architecture call
 
@@ -527,4 +527,4 @@ left preview. Refreshable materialized views if "five minutes old" is fine, whic
 - Six ways to feed the sidekick, from a CSV to logical decoding; freshness goes up, so does the number of things you run.
 - "Materialized view" means a snapshot in PostgreSQL and a trigger in ClickHouse. Refreshable materialized views are the snapshot kind and need no scheduler.
 - CDC targets are `ReplacingMergeTree` tables: updates are versions, deletes are flags, `FINAL` is the price of eventual deduplication, and the replication slot must stay consumed.
-- Everything in this post is open source and runs on your laptop: clone the repository, `scripts/setup.sh` (Docker or local, your choice), `scripts/run_all.sh`. The beer is not included.
+- The scripts in this post are open source and run on your laptop; path 5 needs an Aiven account. Clone the repository, `scripts/setup.sh` (Docker or local, your choice), `scripts/run_all.sh`. The beer is not included.
