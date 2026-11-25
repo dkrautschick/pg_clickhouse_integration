@@ -29,7 +29,7 @@ A row store keeps all columns of a row together on disk. That is perfect for `UP
 liters = 0.5 WHERE id = 4711`: one row, one place, done. It is a poor fit for `SELECT country, sum(liters) FROM beer_sales GROUP BY country` over two billion rows, because the database has to read every row in full to use just two of its columns.
 
 The traditional answer is to move analytics into a closed-source, pay-per-query cloud warehouse and to stop refreshing the dashboard because
-every refresh costs money. The better answer keeps PostgreSQL for what it is great at and adds an open-source column store next to it: PostgreSQL
+every refresh costs money. The alternative keeps PostgreSQL for what it does best and adds an open-source column store next to it: PostgreSQL
 handles the mission-critical writes, the sidekick handles the heavy reads. This post is about the sidekick, ClickHouse, and mostly about the
 one question every DBA asks next: *how do my PostgreSQL data get in there?*
 
@@ -37,7 +37,7 @@ one question every DBA asks next: *how do my PostgreSQL data get in there?*
 
 ClickHouse is a column-oriented database for real-time analytics. It started as an internal project at Yandex in 2009, went open source under the
 Apache 2.0 licence in 2016 (Apache-*licensed*, not Apache-*governed*; confusing enough? good, let's move on), and has been developed by ClickHouse,
-Inc. since 2021. It is written in C++, it ships a release every month, and it is very, very good at exactly the query above.
+Inc. since 2021. It is written in C++, it ships a release every month, and it is built for exactly the query above: it reads two columns instead of every row.
 
 Three ideas explain most of it. The repository shows all three on a real server with `scripts/80_basics.sh`.
 
@@ -326,7 +326,7 @@ ClickHouse combines two ideas. A *shard* holds a slice of the data; the *replica
 INSERTs, and the others fetch the new parts a moment later (asynchronous, multi-master, coordinated through ClickHouse Keeper). A `Distributed`
 table is the view over the shards: a SELECT fans out to one replica of every shard and merges the partial results, an INSERT is split by the
 sharding key. Adding a replica is easy (create the replicated table on the new node, it catches up). Adding a shard changes where new data goes;
-as far as I know existing data is not rebalanced for you, so choose the sharding key as if you had to live with it, because you do. A sensible
+ClickHouse does not rebalance existing data automatically, so choose the sharding key as if you had to live with it, because you do. A sensible
 start is one shard with replicas for availability; add shards when one node can no longer hold or scan the data.
 
 On Aiven: PostgreSQL offers read replicas and standby nodes; Aiven for ClickHouse is a single node, one shard of three nodes or several shards of
@@ -379,7 +379,7 @@ avn service integration-create -t clickhouse_postgresql -s beer-pg -d beer-click
 ```
 
 The script does that with checks, reads the seeded table through the integration database, and adds the refreshable copy of path 3 on top,
-now on a replicated cluster. Weigh it the way you weigh every managed service: operational effort against control. And terminate the services
+now on a replicated cluster. Weigh it the way you weigh any managed platform: operational effort against control. And terminate the services
 afterwards; they cost money while they run.
 
 What the platform does for you: it creates the integration database, keeps the credentials out of your DDL, replicates every table across the

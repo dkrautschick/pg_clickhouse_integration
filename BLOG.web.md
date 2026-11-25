@@ -30,13 +30,13 @@ Execution Time: 214532.880 ms      <-- 3.5 minutes, and counting
 
 A row store keeps all columns of a row together on disk. That is perfect for `UPDATE beer_sales SET liters = 0.5 WHERE id = 4711`: one row, one place, done. It is a poor fit for `SELECT country, sum(liters) FROM beer_sales GROUP BY country` over two billion rows, because the database has to read every row in full to use just two of its columns.
 
-The traditional answer is a closed-source, pay-per-query cloud warehouse, where you stop refreshing the dashboard because every refresh costs money. The better answer keeps PostgreSQL for what it is great at and adds an open-source column store next to it. PostgreSQL handles the mission-critical writes, the sidekick handles the heavy reads.
+The traditional answer is a closed-source, pay-per-query cloud warehouse, where you stop refreshing the dashboard because every refresh costs money. The alternative keeps PostgreSQL for what it does best and adds an open-source column store next to it. PostgreSQL handles the mission-critical writes, the sidekick handles the heavy reads.
 
 This post is about the sidekick, ClickHouse, and mostly about the one question every DBA asks next: *how do my PostgreSQL data get in there?*
 
 ## Meet the sidekick (not your mouse click history)
 
-ClickHouse is a column-oriented database for real-time analytics. It started as an internal project at Yandex in 2009, went open source under the Apache 2.0 licence in 2016, and has been developed by ClickHouse, Inc. since 2021. (Apache-*licensed*, not Apache-*governed*. Confusing enough? Good, let's move on.) It is written in C++, ships a release every month, and is very good at exactly the query above.
+ClickHouse is a column-oriented database for real-time analytics. It started as an internal project at Yandex in 2009, went open source under the Apache 2.0 licence in 2016, and has been developed by ClickHouse, Inc. since 2021. (Apache-*licensed*, not Apache-*governed*. Confusing enough? Good, let's move on.) It is written in C++, ships a release every month, and is built for exactly the query above: it reads two columns instead of every row.
 
 Three ideas explain most of it. `scripts/80_basics.sh` shows all three on a real server.
 
@@ -263,7 +263,7 @@ The script checks row count and `sum(liters)` on both sides after the first refr
 
 **ClickHouse combines shards and replicas.** A *shard* holds a slice of the data. The *replicas* of a shard hold copies of that slice, every replica accepts INSERTs, and the others fetch the new parts a moment later (asynchronous, multi-master, coordinated through ClickHouse Keeper). A `Distributed` table is the view over the shards: a SELECT fans out to one replica of every shard and merges the partial results, and an INSERT is split by the sharding key.
 
-Adding a replica is easy: create the replicated table on the new node and it catches up. Adding a shard changes where new data goes. As far as I know existing data is not rebalanced for you, so choose the sharding key as if you had to live with it, because you do. A sensible start is one shard with replicas for availability; add shards when one node can no longer hold or scan the data.
+Adding a replica is easy: create the replicated table on the new node and it catches up. Adding a shard changes where new data goes. ClickHouse does not rebalance existing data automatically, so choose the sharding key as if you had to live with it, because you do. A sensible start is one shard with replicas for availability; add shards when one node can no longer hold or scan the data.
 
 **On Aiven:** PostgreSQL offers read replicas and standby nodes. Aiven for ClickHouse is a single node, one shard of three nodes, or several shards of three. Every MergeTree table is replicated across the nodes of a shard, and a `Distributed` table on top reads across shards. The repository's scripts use `ReplicatedMergeTree()` on Aiven and `MergeTree` locally, which is the only line that differs.
 
@@ -322,7 +322,7 @@ avn service integration-create -t clickhouse_postgresql -s beer-pg -d beer-click
   --user-config-json '{"databases":[{"database":"defaultdb","schema":"public"}]}'
 ```
 
-The script does this with checks, reads the seeded table through the integration database, and adds the refreshable copy of path 3 on top, now on a replicated cluster. Weigh it the way you weigh every managed service: operational effort against control. And terminate the services afterwards, because they cost money while they run.
+The script does this with checks, reads the seeded table through the integration database, and adds the refreshable copy of path 3 on top, now on a replicated cluster. Weigh it the way you weigh any managed platform: operational effort against control. And terminate the services afterwards, because they cost money while they run.
 
 **What the platform does for you:** it creates the integration database, keeps credentials out of your DDL, replicates every table across the nodes of the ClickHouse service, and for `clickhouse_kafka` it maps topics to tables with the format and columns you declare, so there is no `ENGINE = Kafka` statement to maintain.
 
