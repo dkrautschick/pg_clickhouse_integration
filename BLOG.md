@@ -176,7 +176,7 @@ settings, warm caches: a first impression, not a lab.
 
 | Query | PostgreSQL | ClickHouse | |
 |---|---|---|---|
-| `count(*)` | 98 ms | 1 ms | ClickHouse answers from part metadata |
+| `count(*)` | 98 ms | 1 ms | ClickHouse adds up the stored row counts of its data parts, reads no columns |
 | `sum(liters), avg(price_eur)` | 223 ms | 35 ms | |
 | top 5 countries | 349 ms | 53 ms | |
 | revenue per month | 767 ms | 44 ms | |
@@ -185,6 +185,8 @@ settings, warm caches: a first impression, not a lab.
 | **point lookup by id** | **0.03 ms** | 4 ms | PostgreSQL wins by 120× |
 
 Disk: 166 MB table + 103 MB indexes in PostgreSQL, 50 MiB in ClickHouse.
+
+The first row is a shortcut, not scan speed. A *part* is the immutable chunk of files that one INSERT writes (see above), and every part stores its own row count, so an unfiltered `count(*)` needs no scan.
 
 Read the last row twice. A single row by primary key is PostgreSQL's home turf, and nothing in this post suggests replacing it. Analytics over
 millions of rows is ClickHouse's home turf. The art is to put each where it is strong and to move the data between them. Which brings us to the

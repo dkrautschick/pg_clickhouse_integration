@@ -145,7 +145,7 @@ A sanity check before the integration paths. The script creates the same `beer_s
 | top 5 customers | 1217 ms | 81 ms |
 | **point lookup by id** | **0.03 ms** | 4 ms |
 
-Notes: ClickHouse answers `count(*)` from part metadata. In the `country = 'DE'` row PostgreSQL uses its index and ClickHouse skips granules. Disk: 166 MB table + 103 MB indexes in PostgreSQL, 50 MiB in ClickHouse.
+Notes: Without a filter, ClickHouse answers `count(*)` by adding up row counts that it already stores for every data part (the immutable chunk each INSERT writes). It reads no column data at all, so this row shows a shortcut, not scan speed. In the `country = 'DE'` row PostgreSQL uses its index and ClickHouse skips granules. Disk: 166 MB table + 103 MB indexes in PostgreSQL, 50 MiB in ClickHouse.
 
 > Read the last row twice. A single row by primary key is PostgreSQL's home turf, and PostgreSQL wins it by 120×. Nothing in this post suggests replacing it. Analytics over millions of rows is ClickHouse's home turf. The art is to put each where it is strong and to move the data between them.
 
