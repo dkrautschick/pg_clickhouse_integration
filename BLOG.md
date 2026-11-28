@@ -1,6 +1,6 @@
 # Stop torturing PostgreSQL
 
-### Why your PostgreSQL database needs a ClickHouse sidekick, and six ways to feed it, from a CSV file to logical decoding, without a single pay-per-query invoice
+### Why your PostgreSQL database needs a ClickHouse sidekick, and six ways to feed it, from a CSV file to logical decoding, without a single usage-priced invoice
 
 *All scripts in this post live in the companion repository [dkrautschick/pg_clickhouse_integration](https://github.com/dkrautschick/pg_clickhouse_integration).
 Every section references a numbered script you can run against a Docker stack on your laptop, against a natively installed PostgreSQL and ClickHouse, or against your own servers (`scripts/setup.sh` asks which, and notices what already runs on your ports), and the `listings/`
@@ -28,7 +28,7 @@ Execution Time: 214532.880 ms      <-- 3.5 minutes, and counting
 A row store keeps all columns of a row together on disk. That is perfect for `UPDATE beer_sales SET
 liters = 0.5 WHERE id = 4711`: one row, one place, done. It is a poor fit for `SELECT country, sum(liters) FROM beer_sales GROUP BY country` over two billion rows, because the database has to read every row in full to use just two of its columns.
 
-The traditional answer is to move analytics into a closed-source, pay-per-query cloud warehouse and to stop refreshing the dashboard because
+The traditional answer is to move analytics into a closed-source, usage-priced cloud warehouse and to stop refreshing the dashboard because
 every refresh costs money. The alternative keeps PostgreSQL for what it does best and adds an open-source column store next to it: PostgreSQL
 handles the mission-critical writes, the sidekick handles the heavy reads. This post is about the sidekick, ClickHouse, and mostly about the
 one question every DBA asks next: *how do my PostgreSQL data get in there?*
@@ -369,7 +369,7 @@ makes PostgreSQL keep WAL until the disk is full; the cleanup script drops it an
 
 ## Path 5: let the platform do the wiring (`50_path5_aiven.sh`)
 
-Transparency first: I work at Aiven, and everything before this section runs anywhere. On Aiven the plumbing is a product feature: an integration
+Transparency first: I work at Aiven, and everything before this section runs anywhere. On Aiven you deploy PostgreSQL and ClickHouse on one fully managed, open source based platform, and the plumbing between them is a product feature: an integration
 of type `clickhouse_postgresql` between an Aiven for PostgreSQL and an Aiven for ClickHouse service gives ClickHouse a database that mirrors the
 PostgreSQL schema (`service_<pg>_<db>_<schema>`), and `clickhouse_kafka` does the same for Kafka topics. No connector JSON, no Kafka-engine DDL.
 
@@ -456,7 +456,7 @@ in parallel. Every row carries its WAL position as `_lsn`, ClickHouse keeps the 
 plugin, no slot, no Kafka, no JSON. The announcement's own benchmark (one table, one region, vendor numbers) measured about 200 ms from commit to
 visible in ClickHouse against about 10 seconds for PeerDB in the same setup, and 289,000 rows/s sustained, matching the source's insert rate.
 
-The catch is in the word *physical*: WalShadow needs access to the raw WAL, and most managed PostgreSQL services do not hand that out. So today it
+The catch is in the word *physical*: WalShadow needs access to the raw WAL, and most managed PostgreSQL services do not hand that out. It also still needs `wal_level = logical` and a usable replica identity on every replicated table, plus a shadow Postgres of the same major version, so "no logical replication" means no decoding and no slot, not no configuration. The code is open source (AGPL v3) and labelled a development preview, so treat it as something to test, not to depend on. So today it
 is an option for self-managed PostgreSQL and for ClickHouse's own managed Postgres (private preview), and a thing to watch everywhere else. The
 repository has `docs/path7_walshadow.md` with the links; a script will follow when there is something a normal person can run.
 
