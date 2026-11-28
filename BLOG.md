@@ -456,7 +456,7 @@ in parallel. Every row carries its WAL position as `_lsn`, ClickHouse keeps the 
 plugin, no slot, no Kafka, no JSON. The announcement's own benchmark (one table, one region, vendor numbers) measured about 200 ms from commit to
 visible in ClickHouse against about 10 seconds for PeerDB in the same setup, and 289,000 rows/s sustained, matching the source's insert rate.
 
-The catch is in the word *physical*: WalShadow needs access to the raw WAL, and most managed PostgreSQL services do not hand that out. It also still needs `wal_level = logical` and a usable replica identity on every replicated table, plus a shadow Postgres of the same major version, so "no logical replication" means no decoding and no slot, not no configuration. The code is open source (AGPL v3) and labelled a development preview, so treat it as something to test, not to depend on. So today it
+The catch is in the word *physical*: WalShadow needs access to the raw WAL, and most managed PostgreSQL services do not hand that out. It also still needs `wal_level = logical` and a usable replica identity on every replicated table, plus a shadow Postgres of the same major version, so "no logical replication" means no decoding and no slot, not no configuration. The code is open source (AGPL v3) and labelled a development preview, so treat it as something to test, not to depend on. Today it
 is an option for self-managed PostgreSQL and for ClickHouse's own managed Postgres (private preview), and a thing to watch everywhere else. The
 repository has `docs/path7_walshadow.md` with the links; a script will follow when there is something a normal person can run.
 
